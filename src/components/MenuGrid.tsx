@@ -76,7 +76,7 @@ export default function MenuGrid() {
                   </div>
                 </a>
                 <a
-                  href={`https://wa.me/91904439235?text=${encodeURIComponent(`Hi Citta Comida! I'd like to order: ${p.name}`)}`}
+                  href={`https://wa.me/919004439235?text=${encodeURIComponent(`Hi Citta Comida! I'd like to order: ${p.name}`)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="mt-2 flex h-9 items-center justify-center rounded-full border border-crimson/30 text-[10px] font-semibold uppercase tracking-[0.2em] text-crimson transition-colors hover:bg-crimson hover:text-cream md:h-10"

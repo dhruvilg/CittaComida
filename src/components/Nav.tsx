@@ -53,7 +53,7 @@ export default function Nav() {
             ))}
             <li>
               <a
-                href="https://wa.me/91904439235"
+                href="https://wa.me/919004439235"
                 target="_blank"
                 rel="noreferrer"
                 className="btn-magnetic rounded-full bg-crimson px-5 py-2.5 text-[12px] font-semibold uppercase tracking-[0.22em] text-cream transition-colors hover:text-cocoa"
@@ -97,7 +97,7 @@ export default function Nav() {
               </motion.a>
             ))}
             <a
-              href="https://wa.me/91904439235"
+              href="https://wa.me/919004439235"
               className="mt-6 rounded-full border border-cream/60 px-6 py-3 text-xs font-semibold uppercase tracking-[0.25em]"
             >
               Order on WhatsApp

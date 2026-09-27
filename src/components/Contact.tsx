@@ -35,12 +35,12 @@ export default function Contact() {
                 <motion.a
                   whileHover={{ scale: 1.04 }}
                   whileTap={{ scale: 0.98 }}
-                  href="https://wa.me/91904439235"
+                  href="https://wa.me/919004439235"
                   target="_blank"
                   rel="noreferrer"
                   className="rounded-full bg-gold px-8 py-4 text-xs font-semibold uppercase tracking-[0.25em] text-cocoa"
                 >
-                  WhatsApp +91 90443 9235
+                  WhatsApp +91 90044 39235
                 </motion.a>
                 <motion.a
                   whileHover={{ scale: 1.04 }}
@@ -98,7 +98,7 @@ export default function Contact() {
               <li><a href="#showcase" className="hover:text-gold">The bakes</a></li>
               <li><a href="#story" className="hover:text-gold">Our story</a></li>
               <li><a href="#contact" className="hover:text-gold">Contact</a></li>
-              <li><a href="https://wa.me/91904439235" className="hover:text-gold">Corporate &amp; bulk</a></li>
+              <li><a href="https://wa.me/919004439235" className="hover:text-gold">Corporate &amp; bulk</a></li>
               <li><a href="https://www.instagram.com/cittacomida" className="hover:text-gold">Instagram</a></li>
             </ul>
           </div>

@@ -119,7 +119,7 @@ export default function ProductShowcase() {
       {products.map((p, i) => {
         const flip = i % 2 === 1;
         const hasBack = Boolean(p.imageAlt);
-        const orderLink = `https://wa.me/91904439235?text=${encodeURIComponent(`Hi Citta Comida! I'd like to order: ${p.name}`)}`;
+        const orderLink = `https://wa.me/919004439235?text=${encodeURIComponent(`Hi Citta Comida! I'd like to order: ${p.name}`)}`;
         return (
           <section
             key={p.slug}

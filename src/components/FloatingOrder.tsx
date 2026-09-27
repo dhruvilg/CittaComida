@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const WA = "https://wa.me/91904439235";
+const WA = "https://wa.me/919004439235";
 
 function WhatsAppIcon({ className = "" }: { className?: string }) {
   return (

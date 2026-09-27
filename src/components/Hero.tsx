@@ -127,7 +127,7 @@ export default function Hero() {
               Explore the bakes
             </a>
             <a
-              href="https://wa.me/91904439235"
+              href="https://wa.me/919004439235"
               target="_blank"
               rel="noreferrer"
               className="group flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.25em] text-cocoa"
