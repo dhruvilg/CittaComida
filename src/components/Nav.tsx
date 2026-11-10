@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Hibiscus from "./Hibiscus";
+import SecretTap from "./SecretTap";
 
 const links = [
   { href: "#menu", label: "Menu" },
@@ -34,7 +35,9 @@ export default function Nav() {
       >
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
           <a href="#top" onClick={() => setOpen(false)} className={`group flex items-center gap-3 transition-colors ${open ? "text-cream" : "text-crimson"}`}>
-            <Hibiscus className="h-9 w-9 transition-transform duration-700 group-hover:rotate-12" draw={false} strokeWidth={5} />
+            <SecretTap>
+              <Hibiscus className="h-9 w-9 transition-transform duration-700 group-hover:rotate-12" draw={false} strokeWidth={5} />
+            </SecretTap>
             <span className="font-sans text-[15px] font-medium uppercase tracking-[0.32em]">
               Citta Comida
             </span>
