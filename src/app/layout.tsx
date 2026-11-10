@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import SmoothScroll from "@/components/SmoothScroll";
 
@@ -6,12 +6,16 @@ export const metadata: Metadata = {
   title: "Citta Comida — Food For Your Mind & Soul",
   description:
     "Mumbai's cloud bakery for healthier bakes. No refined sugar, no refined flour, eggless — with vegan, gluten-free and keto options. Cakes, breads, cookies and more, delivered across Mumbai, Thane & Navi Mumbai.",
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, title: "Citta Comida", statusBarStyle: "default" },
   openGraph: {
     title: "Citta Comida — Healthier Bakes, Mumbai",
     description: "No refined sugar. No refined flour. Eggless. Food for your mind & soul.",
     type: "website",
   },
 };
+
+export const viewport: Viewport = { themeColor: "#8e1b1b" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
