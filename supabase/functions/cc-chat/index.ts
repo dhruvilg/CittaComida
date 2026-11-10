@@ -5,6 +5,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const BUCKET = "cc-chat";
 const TABLE = "cc_chat_messages";
+const SUBS = "cc_push_subs";
 const SHARED_KEY = Deno.env.get("CHAT_EDGE_KEY") ?? "";
 
 const json = (body: unknown, status = 200) =>
@@ -24,7 +25,10 @@ Deno.serve(async (req) => {
       const after = Number(p.after || 0);
       let q = sb.from(TABLE).select("*").order("id", { ascending: true });
       q = after > 0 ? q.gt("id", after) : q.limit(300);
-      const { data, error } = await q;
+      const [{ data, error }, { count }] = await Promise.all([
+        q,
+        sb.from(TABLE).select("id", { count: "exact", head: true }),
+      ]);
       if (error) return json({ error: error.message }, 500);
       const paths = data.filter((m) => m.attachment_path).map((m) => m.attachment_path as string);
       const urls = new Map<string, string>();
@@ -33,6 +37,7 @@ Deno.serve(async (req) => {
         signed?.forEach((s) => s.path && s.signedUrl && urls.set(s.path, s.signedUrl));
       }
       return json({
+        count: count ?? 0,
         messages: data.map((m) => ({
           id: m.id,
           sender: m.sender,
@@ -77,6 +82,27 @@ Deno.serve(async (req) => {
       const { error } = await sb.from(TABLE).delete().gt("id", 0);
       if (error) return json({ error: error.message }, 500);
       return json({ ok: true, removed: paths.length });
+    }
+    case "subscribe": {
+      if (!p.sender || !p.sub?.endpoint) return json({ error: "bad sub" }, 400);
+      const { error } = await sb.from(SUBS).upsert({ endpoint: p.sub.endpoint, phone: p.sender, sub: p.sub });
+      if (error) return json({ error: error.message }, 500);
+      return json({ ok: true });
+    }
+    case "unsubscribe": {
+      if (!p.endpoint) return json({ error: "bad" }, 400);
+      await sb.from(SUBS).delete().eq("endpoint", p.endpoint);
+      return json({ ok: true });
+    }
+    case "subs": {
+      // subscriptions of everyone except the sender
+      const { data, error } = await sb.from(SUBS).select("endpoint, phone, sub").neq("phone", p.sender || "");
+      if (error) return json({ error: error.message }, 500);
+      return json({ subs: data });
+    }
+    case "prune": {
+      if (Array.isArray(p.endpoints) && p.endpoints.length) await sb.from(SUBS).delete().in("endpoint", p.endpoints);
+      return json({ ok: true });
     }
     default:
       return json({ error: "unknown action" }, 400);
