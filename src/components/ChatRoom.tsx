@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import Hibiscus from "@/components/Hibiscus";
 import type { ChatMessage } from "@/app/api/chat/[action]/route";
 
-const POLL_MS = 3000;
+const POLL_MS = 2000;
 const urlRe = /(https?:\/\/[^\s<]+)/g;
+
+type LocalMessage = ChatMessage & { pending?: boolean; failed?: boolean };
 
 function Linkify({ text }: { text: string }) {
   const parts = text.split(urlRe);
@@ -44,8 +46,7 @@ function Attachment({ m }: { m: ChatMessage }) {
   );
 }
 
-const fmtTime = (iso: string) =>
-  new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
 const fmtDay = (iso: string) => {
   const d = new Date(iso);
   const today = new Date();
@@ -56,79 +57,148 @@ const fmtDay = (iso: string) => {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: d.getFullYear() !== today.getFullYear() ? "numeric" : undefined });
 };
 
+const b64ToU8 = (b64: string) => {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+};
+
 export default function ChatRoom({ me, isOwner }: { me: string; isOwner: boolean }) {
   const router = useRouter();
-  const [msgs, setMsgs] = useState<ChatMessage[]>([]);
+  const [msgs, setMsgs] = useState<LocalMessage[]>([]);
   const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
   const [upload, setUpload] = useState<{ name: string; pct: number } | null>(null);
   const [online, setOnline] = useState(true);
+  const [notif, setNotif] = useState<"unsupported" | "off" | "on" | "denied">("off");
+  const [unread, setUnread] = useState(0);
   const lastId = useRef(0);
+  const count = useRef(0);
+  const inflight = useRef(false);
   const bottom = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const stuckToBottom = useRef(true);
+  const tempId = useRef(-1);
 
-  const scrollToBottom = (smooth = true) =>
-    bottom.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
+  const scrollToBottom = (smooth = true) => bottom.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
 
-  const fetchNew = useCallback(async () => {
-    try {
-      const r = await fetch(`/api/chat/messages?after=${lastId.current}`, { cache: "no-store" });
-      if (r.status === 401) return router.refresh();
-      if (!r.ok) throw new Error();
-      const { messages } = (await r.json()) as { messages: ChatMessage[] };
-      setOnline(true);
-      if (messages.length) {
-        lastId.current = messages[messages.length - 1].id;
-        setMsgs((prev) => {
-          // a cleared chat comes back with ids restarting → replace
-          const merged = prev.length && messages[0].id <= prev[prev.length - 1].id ? messages : [...prev, ...messages];
-          return merged;
-        });
-        if (stuckToBottom.current) setTimeout(() => scrollToBottom(), 50);
+  /** Fetch newer messages; if the server count shrank (cleared), reload fully. */
+  const sync = useCallback(
+    async (fullRequested = false) => {
+      if (inflight.current) return;
+      inflight.current = true;
+      let full = fullRequested;
+      try {
+        const since = full ? 0 : lastId.current;
+        const r = await fetch(`/api/chat/messages?after=${since}`, { cache: "no-store" });
+        if (r.status === 401) return router.refresh();
+        if (!r.ok) throw new Error();
+        const data = (await r.json()) as { messages: ChatMessage[]; count: number };
+        setOnline(true);
+
+        let serverCount = data.count ?? 0;
+        let messages = data.messages;
+        if (!full && serverCount < count.current) {
+          // remote clear → reload everything once
+          const r2 = await fetch(`/api/chat/messages?after=0`, { cache: "no-store" });
+          if (!r2.ok) throw new Error();
+          const d2 = (await r2.json()) as { messages: ChatMessage[]; count: number };
+          serverCount = d2.count ?? 0;
+          messages = d2.messages;
+          full = true;
+        }
+        count.current = serverCount;
+
+        if (full) {
+          setMsgs(messages);
+          lastId.current = messages.at(-1)?.id || 0;
+          setTimeout(() => scrollToBottom(false), 30);
+        } else if (data.messages.length) {
+          lastId.current = data.messages.at(-1)!.id;
+          setMsgs((prev) => {
+            const confirmed = prev.filter((m) => !m.pending);
+            const fresh = data.messages.filter((m) => !confirmed.some((c) => c.id === m.id));
+            // drop optimistic copies that the server has now echoed back
+            const stillPending = prev.filter((m) => m.pending && !fresh.some((f) => f.sender === me && f.body === m.body && f.attachment_name === m.attachment_name));
+            const merged: LocalMessage[] = [...confirmed, ...fresh, ...stillPending];
+            return merged.sort((a, b) => (a.pending ? 1 : b.pending ? -1 : a.id - b.id));
+          });
+          const incoming = data.messages.filter((m) => m.sender !== me).length;
+          if (incoming && document.visibilityState !== "visible") setUnread((u) => u + incoming);
+          if (stuckToBottom.current) setTimeout(() => scrollToBottom(), 40);
+        }
+      } catch {
+        setOnline(false);
+      } finally {
+        inflight.current = false;
       }
-    } catch {
-      setOnline(false);
-    }
-  }, [router]);
-
-  // full reload (initial + after clear)
-  const reloadAll = useCallback(async () => {
-    lastId.current = 0;
-    const r = await fetch(`/api/chat/messages`, { cache: "no-store" });
-    if (!r.ok) return;
-    const { messages } = (await r.json()) as { messages: ChatMessage[] };
-    setMsgs(messages);
-    lastId.current = messages.at(-1)?.id || 0;
-    setTimeout(() => scrollToBottom(false), 30);
-  }, []);
+    },
+    [router, me]
+  );
 
   useEffect(() => {
-    const t = setTimeout(reloadAll, 0);
-    const id = setInterval(() => document.visibilityState === "visible" && fetchNew(), POLL_MS);
-    const onVis = () => document.visibilityState === "visible" && fetchNew();
+    const t = setTimeout(() => sync(true), 0);
+    const id = setInterval(() => document.visibilityState === "visible" && sync(), POLL_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        setUnread(0);
+        sync();
+      }
+    };
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
     return () => {
       clearTimeout(t);
       clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
     };
-  }, [fetchNew, reloadAll]);
+  }, [sync]);
 
-  // detect a remote clear: poll every 15s for count mismatch
+  // bland tab title; count only while hidden
   useEffect(() => {
-    const id = setInterval(async () => {
-      const r = await fetch(`/api/chat/messages`, { cache: "no-store" });
-      if (!r.ok) return;
-      const { messages } = (await r.json()) as { messages: ChatMessage[] };
-      if (messages.length < msgs.length || (messages.at(-1)?.id || 0) < lastId.current) {
-        setMsgs(messages);
-        lastId.current = messages.at(-1)?.id || 0;
+    document.title = unread ? `(${unread}) Citta Comida` : "Citta Comida";
+  }, [unread]);
+
+  // notifications: register SW + reflect current state
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      setTimeout(() => setNotif("unsupported"), 0);
+      return;
+    }
+    navigator.serviceWorker.register("/sw.js").then(async (reg) => {
+      const sub = await reg.pushManager.getSubscription();
+      if (Notification.permission === "denied") setNotif("denied");
+      else setNotif(sub ? "on" : "off");
+    });
+  }, []);
+
+  const toggleNotif = async () => {
+    if (notif === "unsupported" || notif === "denied") {
+      alert(notif === "denied" ? "Notifications are blocked for this site in your browser settings." : "This browser can't do notifications. On iPhone, add the site to your Home Screen first.");
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    if (notif === "on") {
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/chat/unsubscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) });
+        await sub.unsubscribe();
       }
-    }, 15000);
-    return () => clearInterval(id);
-  }, [msgs.length]);
+      setNotif("off");
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") {
+      setNotif(perm === "denied" ? "denied" : "off");
+      return;
+    }
+    const { key } = (await fetch("/api/chat/vapid").then((r) => r.json())) as { key: string | null };
+    if (!key) return alert("Notifications aren't configured yet.");
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) });
+    const r = await fetch("/api/chat/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sub: sub.toJSON() }) });
+    setNotif(r.ok ? "on" : "off");
+  };
 
   const onScroll = () => {
     const el = list.current;
@@ -136,25 +206,41 @@ export default function ChatRoom({ me, isOwner }: { me: string; isOwner: boolean
     stuckToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
-  const send = async (payload: Record<string, unknown>) => {
-    setSending(true);
+  /** Optimistic send: show instantly, confirm in background. */
+  const send = async (payload: { body?: string; attachment_path?: string; attachment_type?: string; attachment_name?: string; attachment_url?: string }) => {
+    const id = tempId.current--;
+    const optimistic: LocalMessage = {
+      id,
+      sender: me,
+      body: payload.body || null,
+      attachment_url: payload.attachment_url || null,
+      attachment_type: payload.attachment_type || null,
+      attachment_name: payload.attachment_name || null,
+      created_at: new Date().toISOString(),
+      pending: true,
+    };
+    setMsgs((prev) => [...prev, optimistic]);
+    stuckToBottom.current = true;
+    setTimeout(() => scrollToBottom(), 20);
     const r = await fetch("/api/chat/messages", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ body: payload.body, attachment_path: payload.attachment_path, attachment_type: payload.attachment_type, attachment_name: payload.attachment_name }),
     });
-    setSending(false);
-    if (r.ok) {
-      stuckToBottom.current = true;
-      await fetchNew();
+    if (!r.ok) {
+      setMsgs((prev) => prev.map((m) => (m.id === id ? { ...m, pending: false, failed: true } : m)));
+      return;
     }
+    await sync();
+    // if the echo didn't match (e.g. identical text sent twice), drop the optimistic copy anyway
+    setMsgs((prev) => prev.filter((m) => m.id !== id));
   };
 
-  const sendText = async () => {
+  const sendText = () => {
     const body = text.trim();
     if (!body) return;
     setText("");
-    await send({ body });
+    void send({ body });
   };
 
   const sendFiles = async (files: FileList | File[]) => {
@@ -175,29 +261,30 @@ export default function ChatRoom({ me, isOwner }: { me: string; isOwner: boolean
         continue;
       }
       const { path, signedUrl } = (await r.json()) as { path: string; signedUrl: string };
-      await new Promise<void>((resolve) => {
+      const ok = await new Promise<boolean>((resolve) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", signedUrl);
         xhr.setRequestHeader("content-type", file.type || "application/octet-stream");
         xhr.upload.onprogress = (e) => e.lengthComputable && setUpload({ name: file.name, pct: Math.round((e.loaded / e.total) * 100) });
-        xhr.onload = async () => {
-          if (xhr.status < 300) {
-            await send({ body: text.trim() || undefined, attachment_path: path, attachment_type: file.type, attachment_name: file.name });
-            setText("");
-          } else alert("Upload failed");
-          resolve();
-        };
-        xhr.onerror = () => (alert("Upload failed"), resolve());
+        xhr.onload = () => resolve(xhr.status < 300);
+        xhr.onerror = () => resolve(false);
         xhr.send(file);
       });
       setUpload(null);
+      if (!ok) {
+        alert("Upload failed");
+        continue;
+      }
+      const caption = text.trim();
+      setText("");
+      await send({ body: caption || undefined, attachment_path: path, attachment_type: file.type, attachment_name: file.name, attachment_url: URL.createObjectURL(file) });
     }
   };
 
   const clearAll = async () => {
     if (!confirm("Delete every message and file for both of you? This cannot be undone.")) return;
     const r = await fetch("/api/chat/clear", { method: "DELETE" });
-    if (r.ok) reloadAll();
+    if (r.ok) sync(true);
     else alert("Could not clear");
   };
 
@@ -229,8 +316,8 @@ export default function ChatRoom({ me, isOwner }: { me: string; isOwner: boolean
         if (e.dataTransfer.files.length) sendFiles(e.dataTransfer.files);
       }}
     >
-      <header className="flex items-center gap-3 border-b border-cocoa/10 bg-cream/90 px-4 py-3 backdrop-blur">
-        <Hibiscus className="h-8 w-8 text-crimson" draw={false} strokeWidth={5} />
+      <header className="flex items-center gap-2 border-b border-cocoa/10 bg-cream/90 px-3 py-3 backdrop-blur md:gap-3 md:px-4">
+        <Hibiscus className="h-8 w-8 shrink-0 text-crimson" draw={false} strokeWidth={5} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-semibold uppercase tracking-[0.18em] text-cocoa">Kitchen notes</p>
           <p className="text-[11px] text-cocoa/50">
@@ -238,9 +325,17 @@ export default function ChatRoom({ me, isOwner }: { me: string; isOwner: boolean
             {online ? "live" : "reconnecting…"} · you: …{me.slice(-4)}
           </p>
         </div>
+        <button
+          onClick={toggleNotif}
+          aria-label="Notifications"
+          title={notif === "on" ? "Notifications on" : "Turn on notifications"}
+          className={`flex h-9 w-9 items-center justify-center rounded-full border text-base ${notif === "on" ? "border-crimson bg-crimson text-cream" : "border-cocoa/15 text-cocoa/60"}`}
+        >
+          {notif === "on" ? "🔔" : "🔕"}
+        </button>
         {isOwner && (
           <button onClick={clearAll} className="rounded-full border border-crimson/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-crimson">
-            Clear all
+            Clear
           </button>
         )}
         <button onClick={logout} className="rounded-full border border-cocoa/15 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-cocoa/60">
@@ -250,9 +345,7 @@ export default function ChatRoom({ me, isOwner }: { me: string; isOwner: boolean
 
       <div ref={list} onScroll={onScroll} className="flex-1 overflow-y-auto px-3 py-4 md:px-6">
         <div className="mx-auto flex max-w-2xl flex-col gap-1.5">
-          {msgs.length === 0 && (
-            <p className="py-20 text-center text-sm text-cocoa/40">No messages yet. Say hi, or drop a photo here.</p>
-          )}
+          {msgs.length === 0 && <p className="py-20 text-center text-sm text-cocoa/40">No messages yet. Say hi, or drop a photo here.</p>}
           {msgs.map((m, i) => {
             const mine = m.sender === me;
             const day = fmtDay(m.created_at);
@@ -266,13 +359,19 @@ export default function ChatRoom({ me, isOwner }: { me: string; isOwner: boolean
                 )}
                 <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                   <div
-                    className={`max-w-[82%] ${m.attachment_url ? "min-w-[220px]" : ""} rounded-[20px] px-3.5 py-2.5 text-[15px] leading-snug shadow-sm md:max-w-[70%] ${
+                    className={`max-w-[82%] ${m.attachment_url ? "min-w-[220px]" : ""} rounded-[20px] px-3.5 py-2.5 text-[15px] leading-snug shadow-sm transition-opacity md:max-w-[70%] ${
                       mine ? "rounded-br-md bg-crimson text-cream" : "rounded-bl-md bg-paper text-cocoa"
-                    }`}
+                    } ${m.pending ? "opacity-60" : ""} ${m.failed ? "ring-2 ring-amber-400" : ""}`}
                   >
                     <Attachment m={m} />
-                    {m.body && <p className={`whitespace-pre-wrap break-words ${m.attachment_url ? "mt-2" : ""}`}><Linkify text={m.body} /></p>}
-                    <p className={`mt-1 text-right text-[10px] ${mine ? "text-cream/60" : "text-cocoa/40"}`}>{fmtTime(m.created_at)}</p>
+                    {m.body && (
+                      <p className={`whitespace-pre-wrap break-words ${m.attachment_url ? "mt-2" : ""}`}>
+                        <Linkify text={m.body} />
+                      </p>
+                    )}
+                    <p className={`mt-1 text-right text-[10px] ${mine ? "text-cream/60" : "text-cocoa/40"}`}>
+                      {m.failed ? "not sent" : m.pending ? "sending…" : fmtTime(m.created_at)}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -300,7 +399,14 @@ export default function ChatRoom({ me, isOwner }: { me: string; isOwner: boolean
         style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
         <div className="mx-auto flex max-w-2xl items-end gap-2">
-          <input ref={fileInput} type="file" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip" className="hidden" onChange={(e) => e.target.files && (sendFiles(e.target.files), (e.target.value = ""))} />
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
+            className="hidden"
+            onChange={(e) => e.target.files && (sendFiles(e.target.files), (e.target.value = ""))}
+          />
           <button type="button" onClick={() => fileInput.current?.click()} aria-label="Attach" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-paper text-xl text-cocoa">
             +
           </button>
@@ -318,11 +424,7 @@ export default function ChatRoom({ me, isOwner }: { me: string; isOwner: boolean
             className="max-h-40 min-h-11 flex-1 resize-none rounded-[22px] border border-cocoa/15 bg-white px-4 py-2.5 text-base text-cocoa outline-none focus:border-crimson"
             style={{ fieldSizing: "content" } as React.CSSProperties}
           />
-          <button
-            disabled={sending || !text.trim()}
-            aria-label="Send"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-crimson text-cream disabled:opacity-40"
-          >
+          <button disabled={!text.trim()} aria-label="Send" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-crimson text-cream disabled:opacity-40">
             ↑
           </button>
         </div>
