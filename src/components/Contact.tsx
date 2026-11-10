@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import Reveal from "./Reveal";
 import Hibiscus from "./Hibiscus";
+import SecretTap from "./SecretTap";
 
 const steps = [
   { n: "01", t: "Pick your bakes", d: "Browse the menu, note the sizes and flavours you'd like." },
@@ -84,7 +85,9 @@ export default function Contact() {
           <div className="flex flex-col items-start justify-between gap-10 md:flex-row md:items-end">
             <div>
               <div className="flex items-center gap-3 text-cream">
-                <Hibiscus className="h-10 w-10 text-gold" draw={false} strokeWidth={5} />
+                <SecretTap>
+                  <Hibiscus className="h-10 w-10 text-gold" draw={false} strokeWidth={5} />
+                </SecretTap>
                 <span className="text-sm font-medium uppercase tracking-[0.32em]">Citta Comida</span>
               </div>
               <p className="font-display-italic mt-3 text-xl text-cream/60">Food for your mind &amp; soul</p>
