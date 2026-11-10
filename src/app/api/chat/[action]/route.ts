@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { allowedPhones, CHAT_COOKIE, cookieOptions, currentUser, makeToken, normalizePhone, ownerPhone } from "@/lib/chat-auth";
 import { chatBackend } from "@/lib/chat-backend";
+import { notifyOthers } from "@/lib/chat-push";
+import { after } from "next/server";
 
 export const dynamic = "force-dynamic";
 
@@ -42,13 +44,14 @@ async function login(req: Request) {
 
 export async function GET(req: Request, { params }: Ctx) {
   const { action } = await params;
-  if (action !== "messages") return bad("not found", 404);
   const me = await currentUser();
   if (!me) return bad("unauthorized", 401);
-  const after = Number(new URL(req.url).searchParams.get("after") || 0);
-  const r = await chatBackend<{ messages: ChatMessage[] }>({ action: "list", after });
+  if (action === "vapid") return NextResponse.json({ key: process.env.VAPID_PUBLIC_KEY || null });
+  if (action !== "messages") return bad("not found", 404);
+  const since = Number(new URL(req.url).searchParams.get("after") || 0);
+  const r = await chatBackend<{ messages: ChatMessage[]; count: number }>({ action: "list", after: since });
   if (!r.ok) return bad(r.data.error || "backend", 502);
-  return NextResponse.json({ me, messages: r.data.messages });
+  return NextResponse.json({ me, messages: r.data.messages, count: r.data.count });
 }
 
 export async function POST(req: Request, { params }: Ctx) {
@@ -70,7 +73,22 @@ export async function POST(req: Request, { params }: Ctx) {
     if (attachment_path && !attachment_path.startsWith(`${me}/`)) return bad("bad attachment", 400);
     const r = await chatBackend<{ id: number }>({ action: "send", sender: me, body: text, attachment_path, attachment_type, attachment_name });
     if (!r.ok) return bad(r.data.error || "backend", 502);
+    after(() => notifyOthers(me));
     return NextResponse.json({ ok: true, id: r.data.id });
+  }
+
+  if (action === "subscribe") {
+    const { sub } = (await req.json().catch(() => ({}))) as { sub?: { endpoint?: string } };
+    if (!sub?.endpoint) return bad("bad subscription", 400);
+    const r = await chatBackend({ action: "subscribe", sender: me, sub });
+    if (!r.ok) return bad(r.data.error || "backend", 502);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "unsubscribe") {
+    const { endpoint } = (await req.json().catch(() => ({}))) as { endpoint?: string };
+    if (endpoint) await chatBackend({ action: "unsubscribe", endpoint });
+    return NextResponse.json({ ok: true });
   }
 
   if (action === "upload") {
