@@ -1,0 +1,12 @@
+{
+  "name": "Citta Comida",
+  "short_name": "Citta Comida",
+  "description": "Healthier bakes, Mumbai. Food for your mind & soul.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbf6ee",
+  "theme_color": "#8e1b1b",
+  "icons": [
+    { "src": "/apple-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ]
+}
