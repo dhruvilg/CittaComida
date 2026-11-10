@@ -7,11 +7,13 @@ import { useRouter } from "next/navigation";
 export default function SecretTap({ children, taps = 5, windowMs = 2500, to = "/c" }: { children: ReactNode; taps?: number; windowMs?: number; to?: string }) {
   const router = useRouter();
   const times = useRef<number[]>([]);
-  const onTap = () => {
+  const onTap = (e: React.MouseEvent) => {
     const now = Date.now();
     times.current = [...times.current.filter((t) => now - t < windowMs), now];
     if (times.current.length >= taps) {
       times.current = [];
+      e.preventDefault();
+      e.stopPropagation();
       router.push(to);
     }
   };
