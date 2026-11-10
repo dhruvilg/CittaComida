@@ -4,7 +4,7 @@ import ChatLogin from "@/components/ChatLogin";
 import ChatRoom from "@/components/ChatRoom";
 
 export const metadata: Metadata = {
-  title: "Kitchen notes",
+  title: "Citta Comida",
   robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
 };
 
