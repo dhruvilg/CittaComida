@@ -101,6 +101,7 @@ export default function Contact() {
               <li><a href="#showcase" className="hover:text-gold">The bakes</a></li>
               <li><a href="#story" className="hover:text-gold">Our story</a></li>
               <li><a href="#contact" className="hover:text-gold">Contact</a></li>
+              <li><a href="/careers" className="hover:text-gold">Careers</a></li>
               <li><a href="https://wa.me/919004439235" className="hover:text-gold">Corporate &amp; bulk</a></li>
               <li><a href="https://www.instagram.com/cittacomida" className="hover:text-gold">Instagram</a></li>
             </ul>

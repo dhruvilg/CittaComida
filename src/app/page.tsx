@@ -8,6 +8,7 @@ import ProductShowcase from "@/components/ProductShowcase";
 import Story from "@/components/Story";
 import Testimonials from "@/components/Testimonials";
 import Contact from "@/components/Contact";
+import Careers from "@/components/Careers";
 import FloatingOrder from "@/components/FloatingOrder";
 
 export default function Home() {
@@ -23,6 +24,7 @@ export default function Home() {
       <Marquee dark />
       <Story />
       <Testimonials />
+      <Careers />
       <Contact />
       <FloatingOrder />
     </main>
